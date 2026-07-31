@@ -1,0 +1,166 @@
+name: IG autopost
+# 10x daily for @masculine_philosopher: pick a book idea -> write post
+# (Claude, 5-variant tournament + judge) -> render -> (reels: ffmpeg 3s
+# video) -> push media to the public media repo -> publish via Make.com
+# webhook -> IG Graph API.
+#
+# Daily mix: 5 posts — 2 reels + 2 guides + 1 carousel.
+# KIND is NOT chosen by clock hour (GitHub cron runs up to 2.5h late) —
+# each run counts today's committed posts and takes the next kind in the
+# fixed SEQ below, so the mix survives any delay and self-heals after a
+# failed run. A reel landing in 15:00-21:00 UTC goes out via bundle.social
+# (native IG music, 20 free posts/mo, skips cleanly when quota is spent).
+#
+# Required repo secrets:
+#   CLAUDE_CODE_OAUTH_TOKEN - from `claude setup-token` (Claude subscription)
+#   MAKE_WEBHOOK_URL   - Make.com scenario webhook (publishes to IG)
+#   MAKE_API_KEY       - Make.com webhook API key
+#   MEDIA_REPO_TOKEN   - GitHub PAT with push access to the public media repo
+#                        AND the private state repo (harrier-state: idea bank)
+# Required: public media repo (hosts media so Meta's servers can fetch it).
+
+on:
+  schedule:
+    # New York audience times: 11:00, 14:00, 17:00, 20:00,
+    # 22:00 America/New_York (EDT = UTC-4). Cron is UTC, so 8pm/10pm NY land
+    # on the NEXT UTC day — SEQ below is ordered by UTC-day position, not by
+    # NY-day position. (When NY flips to EST in November these drift 1h later
+    # NY-local; adjust then if it matters.)
+    - cron: "0 15,18,21,0,2 * * *"
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "auto | reel | carousel | guide"
+        default: "auto"
+      publisher:
+        description: "auto | make | bundle"
+        default: "auto"
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch private idea bank
+        env:
+          TOKEN: ${{ secrets.MEDIA_REPO_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:$TOKEN@github.com/${{ github.repository_owner }}/harrier-state.git" /tmp/state
+          cp -r /tmp/state/ideas ig/ideas
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Claude Code CLI + Pillow + ffmpeg
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          pip install pillow
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Write and render post
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CHROME: google-chrome
+        run: |
+          set -o pipefail
+          cd ig
+          H=$(date -u +%H)
+          KIND="${{ github.event.inputs.kind }}"
+          if [ -z "$KIND" ] || [ "$KIND" = "auto" ]; then
+            # next kind = daily sequence indexed by how many posts exist today
+            # (UTC day). UTC-day slot order is 00,02,15,18,21 UTC, i.e. NY
+            # 8pm, 10pm, 11am, 2pm, 5pm — so this SEQ delivers:
+            # reel 11am NY, reel 2pm NY, guide 5pm NY, carousel 8pm NY,
+            # guide 10pm NY.
+            N=$(find posts -maxdepth 1 -name "$(date -u +%F)-*" | wc -l | tr -d ' ')
+            SEQ=(carousel guide reel reel guide)
+            if [ "$N" -ge "${#SEQ[@]}" ]; then KIND=reel; else KIND="${SEQ[$N]}"; fi
+            echo "today's post #$((N+1)) -> $KIND"
+          fi
+          PUBLISHER="${{ github.event.inputs.publisher }}"
+          if [ -z "$PUBLISHER" ] || [ "$PUBLISHER" = "auto" ]; then
+            # a reel in the 15:00-21:00 UTC window goes via bundle.social
+            # (native IG music) — reel slots are 15/18 UTC on the NY schedule
+            # and cron fires up to 2.5h late; quota + make-fallback cap the burn.
+            if [ "$KIND" = "reel" ] && [ "$H" -ge 15 ] && [ "$H" -lt 21 ]; then PUBLISHER=bundle; else PUBLISHER=make; fi
+          fi
+          echo "PUBLISHER=$PUBLISHER" >> "$GITHUB_ENV"
+          python write.py "$KIND" | tee /tmp/write.log
+          POST_DIR=$(sed -n 's/^post ready: //p' /tmp/write.log)
+          test -n "$POST_DIR"  # fail loudly if the writer produced nothing
+          if [ "$KIND" = "reel" ]; then
+            python reel.py "$POST_DIR"
+          fi
+          echo "KIND=$KIND" >> "$GITHUB_ENV"
+          echo "POST_DIR=$POST_DIR" >> "$GITHUB_ENV"
+          echo "POST_NAME=$(basename "$POST_DIR")" >> "$GITHUB_ENV"
+
+      - name: Save post to this repo (dedupe history)
+        run: |
+          git config user.name "harrier-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add ig/posts
+          git commit -m "IG $KIND: $POST_NAME" || { echo "nothing to commit"; exit 0; }
+          git pull --rebase   # don't lose the dedupe record if main moved
+          git push
+
+      - name: Save used-idea ledger to private state repo
+        run: |
+          cp ig/ideas/used.json /tmp/state/ideas/used.json
+          cd /tmp/state
+          git config user.name "harrier-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add ideas/used.json
+          git commit -m "used: $POST_NAME" || { echo "no ledger change"; exit 0; }
+          git pull --rebase
+          git push
+
+      - name: Publish via bundle.social (native IG music)
+        id: bundle
+        if: env.PUBLISHER == 'bundle'
+        env:
+          BUNDLE_API_KEY: ${{ secrets.BUNDLE_API_KEY }}
+          BUNDLE_TEAM_ID: ${{ secrets.BUNDLE_TEAM_ID }}
+        run: python ig/bundle_post.py "$POST_DIR"
+
+      # fall back to Make when bundle skipped (quota spent) — never lose a slot
+      - name: Push media to public media repo
+        if: env.PUBLISHER == 'make' || steps.bundle.outputs.posted == 'false'
+        env:
+          TOKEN: ${{ secrets.MEDIA_REPO_TOKEN }}
+        run: |
+          MEDIA_REPO="${{ github.repository_owner }}/masculinephilosopher-ig-media"
+          git clone --depth 1 "https://x-access-token:$TOKEN@github.com/$MEDIA_REPO.git" /tmp/media
+          mkdir -p "/tmp/media/$POST_NAME"
+          if [ "$KIND" = "reel" ]; then
+            cp "$POST_DIR/reel.mp4" "/tmp/media/$POST_NAME/"
+          else
+            cp "$POST_DIR"/slide-*.jpg "/tmp/media/$POST_NAME/"
+          fi
+          cd /tmp/media
+          git config user.name "harrier-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A && git commit -m "$POST_NAME" && git push
+
+      - name: Publish to Instagram
+        if: env.PUBLISHER == 'make' || steps.bundle.outputs.posted == 'false'
+        env:
+          MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
+          MAKE_API_KEY: ${{ secrets.MAKE_API_KEY }}
+        run: |
+          python ig/post.py "$POST_DIR" \
+            "https://raw.githubusercontent.com/${{ github.repository_owner }}/masculinephilosopher-ig-media/main/$POST_NAME"
+
+      - name: Alert on failure (opens a GitHub issue -> email notification)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "IG autopost FAILED $(date -u '+%Y-%m-%d %H:%M UTC')" \
+            --body "Something broke — no post went out for this slot. Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

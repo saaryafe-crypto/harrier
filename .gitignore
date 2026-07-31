@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+out/
+ig/.igprofile/
+ig/reference/
+ig/ideas/
+.DS_Store
