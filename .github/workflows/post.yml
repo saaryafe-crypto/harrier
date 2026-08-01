@@ -5,10 +5,14 @@ name: IG autopost
 # webhook -> IG Graph API.
 #
 # Daily mix: 5 posts — 2 reels + 2 guides + 1 carousel.
-# KIND is NOT chosen by clock hour (GitHub cron runs up to 2.5h late) —
-# each run counts today's committed posts and takes the next kind in the
-# fixed SEQ below, so the mix survives any delay and self-heals after a
-# failed run. A reel landing in 15:00-21:00 UTC goes out via bundle.social
+# KIND is NOT chosen by clock hour (GitHub cron runs up to 2.5h late, and
+# minute-0 crons get SKIPPED under load — it happened 2026-08-01 00:00) —
+# each run counts today's committed posts vs how many slots have passed and
+# takes the next kind in the fixed SEQ below. Extra retry/catch-up crons
+# fire after every slot; a run that finds the day on track exits in seconds,
+# a run that finds a missed slot fills it. The concurrency queue stops a
+# retry from double-posting while a slow writer run is still in flight.
+# A reel landing in 15:00-21:00 UTC goes out via bundle.social
 # (native IG music, 20 free posts/mo, skips cleanly when quota is spent).
 #
 # Required repo secrets:
@@ -26,7 +30,11 @@ on:
     # on the NEXT UTC day — SEQ below is ordered by UTC-day position, not by
     # NY-day position. (When NY flips to EST in November these drift 1h later
     # NY-local; adjust then if it matters.)
-    - cron: "0 15,18,21,0,2 * * *"
+    # :07 not :00 — minute-0 is GitHub's most congested cron minute and
+    # scheduled runs there get silently skipped.
+    - cron: "7 15,18,21,0,2 * * *"    # primary slots
+    - cron: "37 15,18,21,0,2 * * *"   # same-hour retry if primary was skipped
+    - cron: "7 16,19,22,1,3 * * *"    # next-hour catch-up
   workflow_dispatch:
     inputs:
       kind:
@@ -35,6 +43,10 @@ on:
       publisher:
         description: "auto | make | bundle"
         default: "auto"
+
+concurrency:
+  group: ig-autopost
+  cancel-in-progress: false
 
 jobs:
   post:
@@ -45,7 +57,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Decide slot (skip if the day is on track)
+        run: |
+          H=$(date -u +%-H)
+          N=$(find ig/posts -maxdepth 1 -name "$(date -u +%F)-*" | wc -l | tr -d ' ')
+          # slots in UTC-day order: 00,02,15,18,21 -> how many have passed?
+          EXP=0
+          for S in 0 2 15 18 21; do [ "$H" -ge "$S" ] && EXP=$((EXP+1)); done
+          GO=true
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$N" -ge "$EXP" ]; then
+            GO=false
+            echo "day on track ($N posts, $EXP slots passed) — nothing to do"
+          fi
+          KIND="${{ github.event.inputs.kind }}"
+          if [ -z "$KIND" ] || [ "$KIND" = "auto" ]; then
+            # next kind = daily sequence indexed by how many posts exist today
+            # (UTC day). UTC-day slot order 00,02,15,18,21 = NY 8pm, 10pm,
+            # 11am, 2pm, 5pm — so this SEQ delivers: reel 11am NY, reel 2pm
+            # NY, guide 5pm NY, carousel 8pm NY, guide 10pm NY.
+            SEQ=(carousel guide reel reel guide)
+            if [ "$N" -ge "${#SEQ[@]}" ]; then KIND=reel; else KIND="${SEQ[$N]}"; fi
+          fi
+          PUBLISHER="${{ github.event.inputs.publisher }}"
+          if [ -z "$PUBLISHER" ] || [ "$PUBLISHER" = "auto" ]; then
+            # a reel in the 15:00-21:00 UTC window goes via bundle.social
+            # (native IG music); quota + make-fallback cap the burn.
+            if [ "$KIND" = "reel" ] && [ "$H" -ge 15 ] && [ "$H" -lt 21 ]; then PUBLISHER=bundle; else PUBLISHER=make; fi
+          fi
+          echo "post #$((N+1)) of $EXP due -> kind=$KIND publisher=$PUBLISHER go=$GO"
+          { echo "GO=$GO"; echo "KIND=$KIND"; echo "PUBLISHER=$PUBLISHER"; } >> "$GITHUB_ENV"
+
       - name: Fetch private idea bank
+        if: env.GO == 'true'
         env:
           TOKEN: ${{ secrets.MEDIA_REPO_TOKEN }}
         run: |
@@ -53,54 +96,36 @@ jobs:
           cp -r /tmp/state/ideas ig/ideas
 
       - uses: actions/setup-python@v5
+        if: env.GO == 'true'
         with:
           python-version: "3.12"
 
       - name: Install Claude Code CLI + Pillow + ffmpeg
+        if: env.GO == 'true'
         run: |
           npm install -g @anthropic-ai/claude-code
           pip install pillow
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
       - name: Write and render post
+        if: env.GO == 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CHROME: google-chrome
         run: |
           set -o pipefail
           cd ig
-          H=$(date -u +%H)
-          KIND="${{ github.event.inputs.kind }}"
-          if [ -z "$KIND" ] || [ "$KIND" = "auto" ]; then
-            # next kind = daily sequence indexed by how many posts exist today
-            # (UTC day). UTC-day slot order is 00,02,15,18,21 UTC, i.e. NY
-            # 8pm, 10pm, 11am, 2pm, 5pm — so this SEQ delivers:
-            # reel 11am NY, reel 2pm NY, guide 5pm NY, carousel 8pm NY,
-            # guide 10pm NY.
-            N=$(find posts -maxdepth 1 -name "$(date -u +%F)-*" | wc -l | tr -d ' ')
-            SEQ=(carousel guide reel reel guide)
-            if [ "$N" -ge "${#SEQ[@]}" ]; then KIND=reel; else KIND="${SEQ[$N]}"; fi
-            echo "today's post #$((N+1)) -> $KIND"
-          fi
-          PUBLISHER="${{ github.event.inputs.publisher }}"
-          if [ -z "$PUBLISHER" ] || [ "$PUBLISHER" = "auto" ]; then
-            # a reel in the 15:00-21:00 UTC window goes via bundle.social
-            # (native IG music) — reel slots are 15/18 UTC on the NY schedule
-            # and cron fires up to 2.5h late; quota + make-fallback cap the burn.
-            if [ "$KIND" = "reel" ] && [ "$H" -ge 15 ] && [ "$H" -lt 21 ]; then PUBLISHER=bundle; else PUBLISHER=make; fi
-          fi
-          echo "PUBLISHER=$PUBLISHER" >> "$GITHUB_ENV"
           python write.py "$KIND" | tee /tmp/write.log
           POST_DIR=$(sed -n 's/^post ready: //p' /tmp/write.log)
           test -n "$POST_DIR"  # fail loudly if the writer produced nothing
           if [ "$KIND" = "reel" ]; then
             python reel.py "$POST_DIR"
           fi
-          echo "KIND=$KIND" >> "$GITHUB_ENV"
           echo "POST_DIR=$POST_DIR" >> "$GITHUB_ENV"
           echo "POST_NAME=$(basename "$POST_DIR")" >> "$GITHUB_ENV"
 
       - name: Save post to this repo (dedupe history)
+        if: env.GO == 'true'
         run: |
           git config user.name "harrier-bot"
           git config user.email "bot@users.noreply.github.com"
@@ -110,6 +135,7 @@ jobs:
           git push
 
       - name: Save used-idea ledger to private state repo
+        if: env.GO == 'true'
         run: |
           cp ig/ideas/used.json /tmp/state/ideas/used.json
           cd /tmp/state
@@ -122,7 +148,7 @@ jobs:
 
       - name: Publish via bundle.social (native IG music)
         id: bundle
-        if: env.PUBLISHER == 'bundle'
+        if: env.GO == 'true' && env.PUBLISHER == 'bundle'
         env:
           BUNDLE_API_KEY: ${{ secrets.BUNDLE_API_KEY }}
           BUNDLE_TEAM_ID: ${{ secrets.BUNDLE_TEAM_ID }}
@@ -130,7 +156,7 @@ jobs:
 
       # fall back to Make when bundle skipped (quota spent) — never lose a slot
       - name: Push media to public media repo
-        if: env.PUBLISHER == 'make' || steps.bundle.outputs.posted == 'false'
+        if: env.GO == 'true' && (env.PUBLISHER == 'make' || steps.bundle.outputs.posted == 'false')
         env:
           TOKEN: ${{ secrets.MEDIA_REPO_TOKEN }}
         run: |
@@ -148,7 +174,7 @@ jobs:
           git add -A && git commit -m "$POST_NAME" && git push
 
       - name: Publish to Instagram
-        if: env.PUBLISHER == 'make' || steps.bundle.outputs.posted == 'false'
+        if: env.GO == 'true' && (env.PUBLISHER == 'make' || steps.bundle.outputs.posted == 'false')
         env:
           MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
           MAKE_API_KEY: ${{ secrets.MAKE_API_KEY }}
