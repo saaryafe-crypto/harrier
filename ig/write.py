@@ -60,6 +60,18 @@ CRAFT RULES (each one is measured, not opinion):
 - When the lesson has steps, NAME the method ("the 3-second rule") — named rules get saved.
 - Grade 6-7 reading level. Short words. Concrete images, never abstract nouns ("cold shower at 5 a.m.", not "discomfort").
 
+STORYTELLING (mandatory — every post is a tiny movie, not a lecture):
+- Open in a SCENE, not a statement: put the reader inside a moment he lived this week ("It's 1 a.m. Your phone is an inch from your face. Fourth hour."). Concrete time, object, action — he must think "how did he see me".
+- Arc every post: SCENE (his life right now) → TENSION (the cost he's been hiding from) → TURN (the lesson, the moment the frame flips) → PAYOFF (what changes the day he acts). The book lesson lands at the TURN, never at the start.
+- Second person like a camera: SHOW him doing the thing ("you typed the message, deleted it, typed it again"), never describe the concept.
+- One villain per post, and the villain is always his own habit, given a NAME ("the snooze deal", "the someday story", "the one more episode lie"). Named villains get quoted in comments.
+
+CONTROVERSY ENGINE (mandatory — comfort gets scrolled, heresy gets shared):
+- Every post must attack ONE sacred cow: a belief the reader holds because it comforts him ("follow your passion", "you deserve a break", "good things take time", "just be yourself", "hard work always pays off"). Name the comforting lie out loud, then break it with the lesson.
+- Include ONE polarizing claim stated as flat fact — a line half the comments will fight and the other half will defend ("Motivation is a scam", "Your potential is worthless", "Nobody owes you patience"). No hedging, no "maybe", no "I think". Certainty IS the controversy.
+- The target of every controversial line is ALWAYS the reader's own excuse, habit, or comfort — never women, never any group, never politics or religion. Punch the mirror, not the crowd.
+- The reader must feel slightly attacked and completely seen in the same breath. That mix is what gets sent to a friend with "bro this is you".
+
 HOOK TOURNAMENT (do this silently, before writing your answer):
 Draft FIVE different hook lines for this lesson, each using a different formula. Score each 1-10 on: (a) stops a scrolling thumb in under 1 second, (b) names the reader or his problem, (c) contains a negative word, (d) opens a concrete curiosity gap. Kill the four losers. Build the post on the WINNING hook only. Never show the tournament — output only the final JSON."""
 
@@ -80,10 +92,11 @@ THE MEASURED RULES THIS NICHE LIVES BY:
 {learned}
 
 SCORE each candidate 0-100:
-- 40 pts HOOK: stops a scrolling thumb in under 1 second, names the reader or his problem, contains a negative word, opens a concrete curiosity gap
-- 25 pts SEND-POWER: the last line is one a 22-year-old forwards to a friend because sending it makes HIM look sharp
-- 20 pts SAVE-POWER: complete usable lesson, specific numbers, named method or list structure
-- 15 pts WATCH TIME: read length vs the loop (reels) or swipe-pull per slide (carousels)
+- 30 pts HOOK: stops a scrolling thumb in under 1 second, names the reader or his problem, contains a negative word, opens a concrete curiosity gap
+- 20 pts CONTROVERSY: breaks a comforting belief the reader holds and states ONE polarizing claim as flat fact — a line half the comments would fight about. Aimed only at the reader's own excuses and habits, never a group. Safe agreeable advice scores 0 here.
+- 20 pts SEND-POWER: the last line is one a 22-year-old forwards to a friend because sending it makes HIM look sharp
+- 15 pts SAVE-POWER: complete usable lesson, specific numbers, named method or list structure
+- 15 pts STORY + WATCH TIME: reads like a scene the reader is inside (concrete moment → tension → turn → payoff), not a lecture; read length vs the loop (reels) or swipe-pull per slide (carousels)
 Instant 0 to any candidate with jargon, author names, hedging, engagement bait, or anything aimed at women or a group.
 
 CANDIDATES (JSON array, index 0-4):
@@ -106,6 +119,7 @@ CARD SHAPES (pick whichever fits the lesson — the measured best performers):
 1. NUMBERED LIST: a colon setup line ("Bare minimum:" / "The rules:") then a numbered list 1-N of short concrete items. Lists are the top save-driver.
 2. FUTURE-PACING: "When you're 60, you'll only regret that you didn't:" + 3 numbered regrets + "To avoid that:" + staccato commands ("Be tougher. Be bolder. No fear of losing.").
 3. STRAIGHT TEACH: short paragraphs, hook → lesson → punch.
+4. SCENE OPEN: drop the reader mid-scene in line 1 ("It's 1 a.m. and you're still scrolling."), stack the tension in 2-3 short beats, then flip the frame with the lesson, then the punch. Best shape when the lesson maps to a moment every man recognizes from this week.
 Whatever the shape: name real things by name (TikTok, the snooze button, junk food — the reader must see his own day in it), at most ONE parenthetical aside, zero hedging — certainty is the authority. The workhorse sentence is the contrarian reframe: "You're not [surface problem]. You're [real cause]." You may put ONE short ALL-CAPS spike at the emotional peak ("THEY JUST DON'T.") — never more.
 
 STYLE DNA — measured patterns, imitate the FORM, never copy text:
@@ -119,7 +133,7 @@ OUTPUT — one JSON object only:
  "text": "<the tweet card text: hook line, then short paragraphs separated by blank lines, delivering the ENTIRE lesson. Between 150 and 550 characters total — as short or long as the lesson needs>",
  "caption": "<line 1 = ONE simple, surprising fact or truth about success or dating (plain words, from the books' world). Line 2 = this CTA exactly: "Send this to a man who needs it today." Then exactly 5 hashtags on the final line>"}}
 
-SELF-TEST before answering: did a 16-year-old just LEARN something complete he could explain to a friend? Is there zero jargon and zero author names? Would he save this card to re-read? If any answer is no → rewrite. Return ONLY the JSON object, no markdown fences."""
+SELF-TEST before answering: did a 16-year-old just LEARN something complete he could explain to a friend? Is there zero jargon and zero author names? Would he save this card to re-read? Is there ONE line half the comments would fight about, aimed at the reader's own excuse and nobody else? If any answer is no → rewrite. Return ONLY the JSON object, no markdown fences."""
 
 CAROUSEL_PROMPT = VOICE + """
 
@@ -128,9 +142,9 @@ FORMAT: a 9-slide carousel. Each slide is ONE line of huge white text on black. 
 SLIDE PACING (follow exactly):
 - Slide 1 — identity call-out naming the reader, 2-4 words of impact ("As a man" energy)
 - Slide 2 — open the loop with an incomplete promise that forces the swipe — AND it must work as a second cover on its own (Instagram re-serves carousels starting at slide 2 to people who scrolled past slide 1)
-- Slide 3 — the setup: a hard truth from the lesson, OR a quoted self-talk script the reader should say to himself (a usable tool he'll save)
+- Slide 3 — the setup: a hard truth from the lesson, a quoted self-talk script the reader should say to himself (a usable tool he'll save), OR a scene beat that drops him inside a moment from his own week
 - Slides 4-7 — THE FRAGMENT CHAIN, the swipe engine: ONE sentence broken mid-clause across these slides, each fragment grammatically incomplete so the thumb HAS to swipe (e.g. "If you start your day laughing at TikTok videos / scrolling for an hour / eating junk food / and texting girls who don't care about you"). Stack the reader's concrete daily sins, one per slide, named by name.
-- Slide 8 — the verdict: the harshest, most screenshot-able line of the post — 2-5 words hit hardest, this is the line a man sends to his friend
+- Slide 8 — the verdict: the polarizing claim stated as flat fact, the harshest, most screenshot-able line of the post — 2-5 words hit hardest, this is the line half the comments fight about and a man sends to his friend
 - Slide 9 — release + CTA: one encouraging redemption beat containing the word "Follow" (e.g. "Follow for the rules nobody taught you")
 - RHYTHM: alternate slide lengths — ultra-short shock slides between longer ones. Nine same-length slides feel dead. Inner slides rotate sentence types (accusation → truth-as-law → command → consequence), never two of a kind in a row. ONE ALL-CAPS spike allowed at the darkest slide (6-7), nowhere else.
 - PUNCTUATION LAW (absolute): slides carry NO punctuation. No periods, no commas, no colons, no dashes, no parentheses, no exclamation marks. Apostrophes inside words are fine. The beat IS the punctuation — the swipe is the pause. Every slide must sound like a man talking out loud, never like a book.
@@ -146,7 +160,7 @@ OUTPUT — one JSON object only:
  "slides": ["<slide 1 line>", ... exactly 9 strings, each under 75 characters ...],
  "caption": "<line 1 = second hook. Then 3-5 short lines expanding the lesson with real substance (this is the value-delivery zone). Then this CTA line exactly: "Send this to a man who needs it today." Then exactly 5 hashtags on the final line>"}}
 
-SELF-TEST before answering: does every slide force the next swipe? Is slide 8 the line a man would screenshot and send to his friend? Return ONLY the JSON object, no markdown fences."""
+SELF-TEST before answering: does every slide force the next swipe? Is slide 8 a claim half the comments would argue with, aimed at the reader's own habit and nobody else? Would a man screenshot it and send it to his friend? Return ONLY the JSON object, no markdown fences."""
 
 GUIDE_PROMPT = VOICE + """
 
@@ -156,7 +170,7 @@ HOW A SLIDE LOOKS (non-negotiable): ONE line of huge bold white text on black. N
 
 STRUCTURE — exactly 10 slides (Instagram's hard API limit, never more):
 - Slide 1 — THE COVER: a hook so strong a man has to open it. NUMBER + IDENTITY + STAKES. Under 55 characters, and it must contain the number. NEVER start with "The" — "8 RULES THAT SEPARATE MEN FROM BOYS" beats "THE 8 RULES THAT SEPARATE MEN FROM BOYS". Spoken language a man would say out loud to a friend — a big claim or a personal accusation, never a polite headline.
-- Slides 2-9 — THE RULES AS SPOKEN BEATS: one beat per slide. A beat is a fragment of a man talking — a rule, or a piece of one. A strong rule BREAKS across slides so each swipe hits again: "Never beg" then "Anyone" then "Ever". Most beats are 1 to 6 words. Never put two rules on one slide. Slide 2 doubles as a second cover (Instagram re-serves carousels from slide 2) — make it the hardest opening beat. Escalate: hardest truth on slides 8-9 ("Nobody is coming to save you").
+- Slides 2-9 — THE RULES AS SPOKEN BEATS: one beat per slide. A beat is a fragment of a man talking — a rule, or a piece of one. A strong rule BREAKS across slides so each swipe hits again: "Never beg" then "Anyone" then "Ever". Most beats are 1 to 6 words. Never put two rules on one slide. Slide 2 doubles as a second cover (Instagram re-serves carousels from slide 2) — make it the hardest opening beat. At least TWO rules must be heresy beats: flat contradictions of advice the reader has heard his whole life ("Motivation is a scam" / "Never wait until you're ready"). Escalate: hardest truth on slides 8-9 ("Nobody is coming to save you").
 - Slide 10 — release + follow CTA: one short redemption beat containing the word "Follow" ("Follow for the rules nobody taught you").
 - PUNCTUATION LAW (absolute): slides carry NO punctuation. No periods, no commas, no colons, no dashes, no parentheses, no exclamation marks. Apostrophes inside words are fine. The beat IS the punctuation — the swipe is the pause. Read every slide out loud before answering — it must sound like a man talking, never like a book.
 
@@ -171,7 +185,7 @@ OUTPUT — one JSON object only:
  "slides": ["<slide 1 cover>", "<rule 1>", ... 8 rule slides ..., "<slide 10 release + Follow CTA>"] — exactly 10 strings,
  "caption": "<line 1 = re-hook naming the guide. Then 2-3 short lines on what the guide fixes. Then this CTA line exactly: "Send this to a man who needs it today." Then exactly 5 hashtags on the final line>"}}
 
-SELF-TEST before answering: would a 20-year-old SAVE this to re-read before a hard week? Is every rule actionable today? Does every slide sound spoken, not written? Zero punctuation on every slide? Return ONLY the JSON object, no markdown fences."""
+SELF-TEST before answering: would a 20-year-old SAVE this to re-read before a hard week? Is every rule actionable today? Are at least two rules ones half the comments would fight about? Does every slide sound spoken, not written? Zero punctuation on every slide? Return ONLY the JSON object, no markdown fences."""
 
 # ---------------------------------------------------------------------------
 
