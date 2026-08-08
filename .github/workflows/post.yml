@@ -59,6 +59,11 @@ jobs:
 
       - name: Decide slot (skip if the day is on track)
         run: |
+          # a run queued behind a slow writer checks out a STALE snapshot
+          # (github.sha is pinned at queue time) — it counted 4 posts when 5
+          # existed and double-posted (2026-08-07, two guides 10 min apart).
+          # Refresh main NOW so N is counted from live state.
+          git pull --rebase --quiet
           H=$(date -u +%-H)
           N=$(find ig/posts -maxdepth 1 -name "$(date -u +%F)-*" | wc -l | tr -d ' ')
           # slots in UTC-day order: 00,02,15,18,21 -> how many have passed?
