@@ -16,7 +16,11 @@ import json, os, re, subprocess, sys
 from datetime import date
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MODEL = "claude-opus-4-6"
+# Cost split (2026-08-08, ~95% token cut vs all-opus): Haiku writes the
+# variants (the output-heavy call), Sonnet judges the winner. The QA gate +
+# judge protect voice quality; learn.py's weekly report is the canary.
+MODEL = "claude-haiku-4-5-20251001"
+JUDGE_MODEL = "claude-sonnet-4-6"
 BANK = os.path.join(HERE, "ideas", "bank.json")
 USED = os.path.join(HERE, "ideas", "used.json")
 
@@ -78,15 +82,15 @@ Draft FIVE different hook lines for this lesson, each using a different formula.
 # Appended to either prompt: turns the single post into a 5-variant heat.
 TOURNAMENT = """
 
-TOURNAMENT MODE — this overrides the output instruction above: do NOT kill
-the four losing hooks. Build a COMPLETE post on each of the five hooks — five
-full variants of this post, each with a different hook formula and, where the
-lesson allows, a different shape/angle. Every variant must independently obey
-every rule above (full lesson, punch line, caption with the exact CTA and
-exactly 5 hashtags). Return ONLY a JSON array of exactly 5 post objects in the
-schema above, no markdown fences."""
+TOURNAMENT MODE — this overrides the output instruction above: kill only the
+TWO weakest hooks. Build a COMPLETE post on each of the three surviving hooks
+— three full variants of this post, each with a different hook formula and,
+where the lesson allows, a different shape/angle. Every variant must
+independently obey every rule above (full lesson, punch line, caption with the
+exact CTA and exactly 5 hashtags). Return ONLY a JSON array of exactly 3 post
+objects in the schema above, no markdown fences."""
 
-JUDGE_PROMPT = """You are an elite Instagram growth strategist for 2026: you know the ranking signals cold (watch time, sends per reach, saves, likes per reach) and you have grown self-improvement pages for men from zero to millions. Judge the five candidate posts below for "Masculine Philosopher" (Tyler Durden voice, men 16-30). Pick what will actually WIN in the feed, not what reads nicest.
+JUDGE_PROMPT = """You are an elite Instagram growth strategist for 2026: you know the ranking signals cold (watch time, sends per reach, saves, likes per reach) and you have grown self-improvement pages for men from zero to millions. Judge the candidate posts below for "Masculine Philosopher" (Tyler Durden voice, men 16-30). Pick what will actually WIN in the feed, not what reads nicest.
 
 THE MEASURED RULES THIS NICHE LIVES BY:
 {learned}
@@ -99,11 +103,11 @@ SCORE each candidate 0-100:
 - 15 pts STORY + WATCH TIME: reads like a scene the reader is inside (concrete moment → tension → turn → payoff), not a lecture; read length vs the loop (reels) or swipe-pull per slide (carousels)
 Instant 0 to any candidate with jargon, author names, hedging, engagement bait, or anything aimed at women or a group.
 
-CANDIDATES (JSON array, index 0-4):
+CANDIDATES (JSON array, zero-indexed):
 {variants}
 
 Return ONLY this JSON, no markdown fences:
-{{"ranking": [<all 5 indices, best first>], "why": "<one sentence: why the winner beats the rest>"}}"""
+{{"ranking": [<ALL candidate indices, best first>], "why": "<one sentence: why the winner beats the rest>"}}"""
 
 REEL_PROMPT = VOICE + """
 
@@ -199,7 +203,7 @@ def load_used():
 
 def learned():
     p = os.path.join(HERE, "inspiration", "learned.md")
-    return open(p).read()[:12000] if os.path.exists(p) else ""
+    return open(p).read()[:4000] if os.path.exists(p) else ""
 
 
 def pick_idea(kind, bank, used):
@@ -268,19 +272,19 @@ def build_prompt(kind, idea, used):
     return REEL_PROMPT.format(**kw)
 
 
-def call_claude(prompt):
+def call_claude(prompt, model=MODEL):
     if os.environ.get("ANTHROPIC_API_KEY"):
         import anthropic
         client = anthropic.Anthropic()
         with client.messages.stream(
-            model=MODEL, max_tokens=16000, thinking={"type": "adaptive"},
+            model=model, max_tokens=16000, thinking={"type": "adaptive"},
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
             msg = stream.get_final_message()
         out = "".join(b.text for b in msg.content if b.type == "text")
     else:  # Claude Code CLI, no key needed
-        # 5 guide variants in one call can run 10+ min on CI — 30 min ceiling
-        out = subprocess.run(["claude", "-p", "--model", MODEL, prompt],
+        # guide variants in one call can run 10+ min on CI — 30 min ceiling
+        out = subprocess.run(["claude", "-p", "--model", model, prompt],
                              capture_output=True, text=True, timeout=1800).stdout
     m = re.search(r"[\[{].*[\]}]", out, re.S)  # object or array, whole span
     if not m:
@@ -403,7 +407,8 @@ def main(kind):
             try:
                 verdict = call_claude(JUDGE_PROMPT.format(
                     learned=learned(),
-                    variants=json.dumps(variants, ensure_ascii=False, indent=1)))
+                    variants=json.dumps(variants, ensure_ascii=False, indent=1)),
+                    model=JUDGE_MODEL)
                 r = [i for i in verdict.get("ranking", [])
                      if isinstance(i, int) and 0 <= i < len(variants)]
                 if r:
