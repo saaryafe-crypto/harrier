@@ -272,6 +272,13 @@ def build_prompt(kind, idea, used):
     return REEL_PROMPT.format(**kw)
 
 
+class ClaudeNoJSON(Exception):
+    """Claude answered with prose (usually a refusal) instead of JSON.
+    Haiku intermittently refuses the persona prompt (2026-08-09..11 runs:
+    "I can't help with this request") — retryable, and the last attempt
+    escalates to the Sonnet judge model, which doesn't refuse it."""
+
+
 def call_claude(prompt, model=MODEL):
     if os.environ.get("ANTHROPIC_API_KEY"):
         import anthropic
@@ -284,11 +291,14 @@ def call_claude(prompt, model=MODEL):
         out = "".join(b.text for b in msg.content if b.type == "text")
     else:  # Claude Code CLI, no key needed
         # guide variants in one call can run 10+ min on CI — 30 min ceiling
-        out = subprocess.run(["claude", "-p", "--model", model, prompt],
-                             capture_output=True, text=True, timeout=1800).stdout
+        res = subprocess.run(["claude", "-p", "--model", model, prompt],
+                             capture_output=True, text=True, timeout=1800)
+        out = res.stdout
+        if not out.strip() and res.stderr:
+            out = res.stderr  # surface the real error, not an empty string
     m = re.search(r"[\[{].*[\]}]", out, re.S)  # object or array, whole span
     if not m:
-        raise SystemExit(f"claude returned no JSON:\n{out[:500]}")
+        raise ClaudeNoJSON(f"claude ({model}) returned no JSON:\n{out[:500]}")
     return json.loads(m.group(0))
 
 
@@ -393,10 +403,17 @@ def main(kind):
 
     prompt = build_prompt(kind, idea, used) + TOURNAMENT
     for attempt in range(3):
+        # attempts 1-2 on the cheap writer; last attempt escalates to Sonnet
+        # (Haiku sometimes refuses the persona prompt, Sonnet doesn't)
+        writer_model = MODEL if attempt < 2 else JUDGE_MODEL
         try:
-            variants = call_claude(prompt)
+            variants = call_claude(prompt, model=writer_model)
         except subprocess.TimeoutExpired:
             print(f"claude timed out (attempt {attempt+1}) — retrying", file=sys.stderr)
+            continue
+        except ClaudeNoJSON as e:
+            print(f"attempt {attempt+1} ({writer_model}) refused/no JSON — retrying:"
+                  f"\n{e}", file=sys.stderr)
             continue
         if isinstance(variants, dict):
             variants = [variants]  # model ignored tournament mode — still usable
